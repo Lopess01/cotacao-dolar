@@ -1,19 +1,31 @@
-import requests 
-import csv
-from datetime import datetime
+import requests
+from databricks.connect import DatabricksSession
 import os
+from dotenv import load_dotenv
+from datetime import datetime, timezone, timedelta
+from pyspark.sql.types import StructType, StructField, TimestampNTZType, DoubleType
 
-pasta_projeto = os.path.dirname(os.path.abspath(__file__))
-caminho_csv = os.path.join(pasta_projeto, "historico_cotacao.csv")
+fuso_brasilia = timezone(timedelta(hours=-3))
+agora_brasilia = datetime.now(fuso_brasilia).replace(tzinfo=None)
+load_dotenv()
+API_KEY = os.environ.get("AWESOMEAPI_TOKEN")
+spark = DatabricksSession.builder.serverless().profile("Renato").getOrCreate()
 
-resposta = requests.get("http://economia.awesomeapi.com.br/json/last/USD-BRL")
+resposta = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
 dados = resposta.json()["USDBRL"]
 
-with open(caminho_csv, "a", newline="") as arquivo:
-    escritor = csv.writer(arquivo)
-    escritor.writerow([datetime.now(), dados["bid"], dados["ask"]])
+# TimestampNTZ guarda o horário "de parede", sem conversão para UTC
+schema = StructType([
+    StructField("data_hora", TimestampNTZType()),
+    StructField("bid", DoubleType()),
+    StructField("ask", DoubleType()),
+])
 
-print(f'salvo: {dados['bid']} / {dados["ask"]}')
+df = spark.createDataFrame(
+    [(agora_brasilia, float(dados["bid"]), float(dados["ask"]))],
+    schema=schema,
+)
 
-# bid é a cotação de venda do dolar, ou seja, se voce quiser vender dolares esse é o valor em reais
-# ask, ou offer, é o valor que voce paga no dolar
+df.write.format("delta").mode("append").saveAsTable("cotacao_dolar")
+
+print(f"Salvo na tabela Delta: {dados['bid']} / {dados['ask']}")
