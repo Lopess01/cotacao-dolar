@@ -1,0 +1,8 @@
+bundle:
+  name: cotacao-dolar
+
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: https://dbc-ec68e912-884d.cloud.databricks.com/
